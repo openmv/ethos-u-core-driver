@@ -55,7 +55,7 @@ struct ethosu_device_ops
                                uint32_t cms_length,
                                const uint64_t *base_addr,
                                int num_base_addr);
-    void (*print_err_status)(struct ethosu_device *dev);
+    void (*print_err_status)(const struct ethosu_device *dev);
     bool (*handle_interrupt)(struct ethosu_device *dev);
     void (*get_hw_info)(struct ethosu_device *dev, struct ethosu_hw_info *hwinfo);
     bool (*verify_access_state)(struct ethosu_device *dev);

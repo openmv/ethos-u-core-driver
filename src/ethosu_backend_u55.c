@@ -66,9 +66,9 @@ static bool u55_dev_init(struct ethosu_device *dev,
 
     if (dev->reg->CONFIG.product != ETHOSU_PRODUCT_U55)
     {
-        LOG_ERR("Failed to initialize Ethos-U55 device. Wrong device type (got %d, expected %d",
-                dev->reg->CONFIG.product,
-                ETHOSU_PRODUCT_U55);
+        LOG_ERR("Failed to initialize Ethos-U55 device. Wrong device type (got %" PRIu32 ", expected %" PRIu32 ")",
+                (uint32_t)dev->reg->CONFIG.product,
+                (uint32_t)ETHOSU_PRODUCT_U55);
         return false;
     }
 
@@ -158,7 +158,7 @@ static void u55_dev_run_command_stream(struct ethosu_device *dev,
     LOG_DEBUG("CMD=0x%08" PRIx32, cmd.word);
 }
 
-static void u55_dev_print_err_status(struct ethosu_device *dev)
+static void u55_dev_print_err_status(const struct ethosu_device *dev)
 {
     LOG_ERR("NPU status=0x%08" PRIx32 ", qread=%" PRIu32 ", cmd_end_reached=%u",
             dev->reg->STATUS.word,

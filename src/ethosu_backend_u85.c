@@ -166,7 +166,7 @@ static void u85_dev_run_command_stream(struct ethosu_device *dev,
     LOG_DEBUG("CMD=0x%08" PRIx32, cmd.word);
 }
 
-static void u85_dev_print_err_status(struct ethosu_device *dev)
+static void u85_dev_print_err_status(const struct ethosu_device *dev)
 {
     LOG_ERR("NPU status=0x%08" PRIx32 ", qread=%" PRIu32 ", cmd_end_reached=%u",
             dev->reg->STATUS.word,

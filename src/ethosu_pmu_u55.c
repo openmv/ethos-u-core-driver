@@ -272,7 +272,7 @@ void U55_PMU_CNTR_Increment(struct ethosu_driver *drv, uint32_t mask)
 
 void U55_PMU_PMCCNTR_CFG_Set_Start_Event(struct ethosu_driver *drv, enum ethosu_pmu_event_type start_event)
 {
-    LOG_DEBUG("start_event=%u", start_event);
+    LOG_DEBUG("start_event=%u", (unsigned int)start_event);
     struct pmccntr_cfg_r cfg;
     uint32_t val = pmu_event_value(start_event);
     if (val == UINT32_MAX)
@@ -288,7 +288,7 @@ void U55_PMU_PMCCNTR_CFG_Set_Start_Event(struct ethosu_driver *drv, enum ethosu_
 
 void U55_PMU_PMCCNTR_CFG_Set_Stop_Event(struct ethosu_driver *drv, enum ethosu_pmu_event_type stop_event)
 {
-    LOG_DEBUG("stop_event=%u", stop_event);
+    LOG_DEBUG("stop_event=%u", (unsigned int)stop_event);
     struct pmccntr_cfg_r cfg;
     uint32_t val = pmu_event_value(stop_event);
     if (val == UINT32_MAX)
