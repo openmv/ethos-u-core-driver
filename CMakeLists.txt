@@ -65,7 +65,7 @@ include_directories(${CMSIS_PATH}/CMSIS/Core/Include)
 # Build driver library
 add_library(ethosu_core_driver STATIC)
 target_include_directories(ethosu_core_driver PUBLIC include)
-target_sources(ethosu_core_driver PRIVATE src/ethosu_driver.c src/ethosu_pmu.c)
+target_sources(ethosu_core_driver PRIVATE src/ethosu_driver.c src/ethosu_driver_cop.c src/ethosu_pmu.c)
 
 if (ETHOSU_MULTI_VARIANT)
     target_compile_definitions(ethosu_core_driver PUBLIC

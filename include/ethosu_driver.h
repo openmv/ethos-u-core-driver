@@ -308,7 +308,8 @@ unsigned int ethosu_config_select(uint64_t address, int index);
  *
  * @param drv               Pointer to driver handle
  * @param base_address      NPU register base address
- * @param fast_memory       Fast memory area, used for Ethos-U65/U85 with spilling
+ * @param fast_memory       Fast memory area, only for Ethos-U65/U85. Must be set for networks compiled in Vela's
+ *                          Dedicated_Sram mode
  * @param fast_memory_size  Size in bytes of fast memory area
  * @param secure_enable     Configure NPU in secure- or non-secure mode
  * @param privilege_enable  Configure NPU in privileged- or non-privileged mode
@@ -330,7 +331,8 @@ int ethosu_init(struct ethosu_driver *drv,
  * @param dev_config        Pointer to device config
  * @param dev_user_ops      Pointer to device user ops (can be NULL)
  * @param base_address      NPU register base address
- * @param fast_memory       Fast memory area, used for Ethos-U65/U85 with spilling
+ * @param fast_memory       Fast memory area, only for Ethos-U65/U85. Must be set for networks compiled in Vela's
+ *                          Dedicated_Sram mode
  * @param fast_memory_size  Size in bytes of fast memory area
  * @param secure_enable     Configure NPU in secure- or non-secure mode
  * @param privilege_enable  Configure NPU in privileged- or non-privileged mode

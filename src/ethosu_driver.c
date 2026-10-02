@@ -21,6 +21,7 @@
 
 #include "ethosu_driver.h"
 #include "ethosu_device.h"
+#include "ethosu_driver_cop.h"
 #include "ethosu_log.h"
 
 #ifndef ETHOSU_MULTI_VARIANT
@@ -51,69 +52,11 @@
 
 #define UNUSED(x) ((void)x)
 
-#define MASK_16_BYTE_ALIGN (0xF)
-#define OPTIMIZER_CONFIG_LENGTH_32_BIT_WORD 2
-#define DRIVER_ACTION_LENGTH_32_BIT_WORD 1
-#define ETHOSU_FOURCC ('1' << 24 | 'P' << 16 | 'O' << 8 | 'C') // "Custom Operator Payload 1"
-
 #define FAST_MEMORY_BASE_ADDR_INDEX 2
 
 /******************************************************************************
  * Types
  ******************************************************************************/
-
-// Driver actions
-enum DRIVER_ACTION_e
-{
-    RESERVED         = 0,
-    OPTIMIZER_CONFIG = 1,
-    COMMAND_STREAM   = 2,
-    NOP              = 5,
-};
-
-// Custom operator payload data struct
-struct cop_data_s
-{
-    union
-    {
-        // Driver action data
-        struct
-        {
-            uint8_t driver_action_command; // (valid values in DRIVER_ACTION_e)
-            uint8_t reserved;
-
-            // Driver action data
-            union
-            {
-                // DA_CMD_OPT_CFG
-                struct
-                {
-                    uint16_t rel_nbr : 4;
-                    uint16_t patch_nbr : 4;
-                    uint16_t opt_cfg_reserved : 8;
-                };
-
-                // DA_CMD_CMSTRM
-                struct
-                {
-                    uint16_t length;
-                };
-
-                uint16_t driver_action_data;
-            };
-        };
-
-        uint32_t word;
-    };
-};
-
-// optimizer config struct
-struct opt_cfg_s
-{
-    struct cop_data_s da_data;
-    uint32_t cfg;
-    uint32_t id;
-};
 
 struct ethosu_semaphore_t
 {
@@ -562,106 +505,6 @@ static void ethosu_reset_job(struct ethosu_driver *drv)
     memset(&drv->job, 0, sizeof(struct ethosu_job));
 }
 
-static int handle_optimizer_config(struct ethosu_driver *drv, struct opt_cfg_s const *opt_cfg_p)
-{
-    LOG_INFO("Optimizer release nbr: %u patch: %u", opt_cfg_p->da_data.rel_nbr, opt_cfg_p->da_data.patch_nbr);
-
-    if (drv->dev.desc->ops->verify_optimizer_config(&drv->dev, opt_cfg_p->cfg, opt_cfg_p->id) != true)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-static int handle_command_stream(struct ethosu_driver *drv, const uint8_t *cmd_stream, const int cms_length)
-{
-    // cms_length is number of 32bit words
-    uint32_t cms_bytes = cms_length * 4;
-
-    LOG_INFO("handle_command_stream: cmd_stream=%p, cms_length %d words (%" PRIu32 " bytes)",
-             cmd_stream,
-             cms_length,
-             cms_bytes);
-
-    if (0 != ((ptrdiff_t)cmd_stream & MASK_16_BYTE_ALIGN))
-    {
-        LOG_ERR("Command stream addr %p not aligned to 16 bytes", cmd_stream);
-        return -1;
-    }
-
-    // Verify minimum 16 byte alignment for base address'
-    for (int i = 0; i < drv->job.num_base_addr; i++)
-    {
-        if (0 != (drv->job.base_addr[i] & MASK_16_BYTE_ALIGN))
-        {
-            LOG_ERR("Base addr %d: 0x%" PRIx64 "not aligned to 16 bytes", i, drv->job.base_addr[i]);
-            return -1;
-        }
-    }
-
-    // TODO: Add call to flush/clean the command stream too?
-
-    // Flush/clean the data cache
-    ethosu_flush_dcache(drv->job.base_addr, drv->job.base_addr_size, drv->job.num_base_addr);
-
-    // Request power gating disabled during inference run
-    if (ethosu_request_power(drv))
-    {
-        LOG_ERR("Failed to request power");
-        return -1;
-    }
-
-    drv->job.state = ETHOSU_JOB_RUNNING;
-
-    // Inference begin callback
-    ethosu_inference_begin(drv, drv->job.user_arg);
-
-    // Execute the command stream
-    drv->dev.desc->ops->run_command_stream(
-        &drv->dev, cmd_stream, cms_bytes, drv->job.base_addr, drv->job.num_base_addr);
-
-    return 0;
-}
-
-static bool ethosu_verify_cop_data_size(const int custom_data_size)
-{
-    // COP data size must be at least 4 bytes
-    if (custom_data_size < 4)
-    {
-        LOG_ERR("custom_data_size=%d < 4", custom_data_size);
-        return false;
-    }
-
-    // Custom data size must be a multiple of 4
-    if ((custom_data_size % 4) != 0)
-    {
-        LOG_ERR("custom_data_size=0x%x not a multiple of 4", (unsigned)custom_data_size);
-        return false;
-    }
-
-    return true;
-}
-
-static bool ethosu_verify_cop_record_words(const struct cop_data_s *data_ptr,
-                                           const struct cop_data_s *data_end,
-                                           size_t record_words,
-                                           const char *record_name)
-{
-    ptrdiff_t remaining_words = data_end - data_ptr;
-
-    if (remaining_words < 0 || (size_t)remaining_words < record_words)
-    {
-        LOG_ERR("Custom Operator Payload truncated %s record. remaining_words=%td, expected_words=%zu",
-                record_name,
-                remaining_words,
-                record_words);
-        return false;
-    }
-
-    return true;
-}
-
 /******************************************************************************
  * Weak functions - Interrupt handler
  ******************************************************************************/
@@ -1023,9 +866,6 @@ int ethosu_invoke_async(struct ethosu_driver *drv,
                         const int num_base_addr,
                         void *user_arg)
 {
-    const struct cop_data_s *data_ptr = custom_data_ptr;
-    const struct cop_data_s *data_end = (struct cop_data_s *)((ptrdiff_t)custom_data_ptr + custom_data_size);
-
     if (!drv || !custom_data_ptr || !base_addr || !base_addr_size)
     {
         LOG_ERR("Invoke called with NULL arg(s)");
@@ -1052,15 +892,6 @@ int ethosu_invoke_async(struct ethosu_driver *drv,
         goto err;
     }
 
-    // Verify first word
-    if (data_ptr->word != ETHOSU_FOURCC)
-    {
-        LOG_ERR("Custom Operator Payload: %" PRIu32 " is not correct, expected %x", data_ptr->word, ETHOSU_FOURCC);
-        goto err;
-    }
-
-    data_ptr++;
-
     // Adjust base address to fast memory area
     if (drv->fast_memory != 0 && num_base_addr > FAST_MEMORY_BASE_ADDR_INDEX)
     {
@@ -1075,64 +906,9 @@ int ethosu_invoke_async(struct ethosu_driver *drv,
         base_addr[FAST_MEMORY_BASE_ADDR_INDEX] = drv->fast_memory;
     }
 
-    // Parse Custom Operator Payload data
-    while (data_ptr < data_end)
+    if (ethosu_handle_cop_payload(drv, custom_data_ptr, (size_t)custom_data_size) < 0)
     {
-        switch (data_ptr->driver_action_command)
-        {
-        case OPTIMIZER_CONFIG:
-        {
-            const size_t record_words = DRIVER_ACTION_LENGTH_32_BIT_WORD + OPTIMIZER_CONFIG_LENGTH_32_BIT_WORD;
-            struct opt_cfg_s opt_cfg  = {0};
-            LOG_DEBUG("OPTIMIZER_CONFIG");
-
-            if (!ethosu_verify_cop_record_words(data_ptr, data_end, record_words, "OPTIMIZER_CONFIG"))
-            {
-                goto err;
-            }
-
-            opt_cfg.da_data = *data_ptr;
-            opt_cfg.cfg     = data_ptr[1].word;
-            opt_cfg.id      = data_ptr[2].word;
-
-            if (handle_optimizer_config(drv, &opt_cfg) < 0)
-            {
-                goto err;
-            }
-            data_ptr += record_words;
-            break;
-        }
-        case COMMAND_STREAM:
-        {
-            size_t record_words;
-
-            // Vela only supports putting one COMMAND_STREAM per op
-            LOG_DEBUG("COMMAND_STREAM");
-            int cms_length                = (data_ptr->reserved << 16) | data_ptr->length;
-            const uint8_t *command_stream = (const uint8_t *)(data_ptr + 1);
-
-            record_words = DRIVER_ACTION_LENGTH_32_BIT_WORD + (size_t)cms_length;
-            if (!ethosu_verify_cop_record_words(data_ptr, data_end, record_words, "COMMAND_STREAM"))
-            {
-                goto err;
-            }
-
-            if (handle_command_stream(drv, command_stream, cms_length) < 0)
-            {
-                goto err;
-            }
-            data_ptr += record_words;
-            break;
-        }
-        case NOP:
-            LOG_DEBUG("NOP");
-            data_ptr += DRIVER_ACTION_LENGTH_32_BIT_WORD;
-            break;
-        default:
-            LOG_ERR("UNSUPPORTED driver_action_command: %u", data_ptr->driver_action_command);
-            goto err;
-            break;
-        }
+        goto err;
     }
 
     return 0;
@@ -1177,8 +953,7 @@ int ethosu_get_product_config_from_cop_data(const void *custom_data_ptr,
                                             uint32_t *product_out,
                                             uint32_t *log2_macs_out)
 {
-    const struct cop_data_s *data_ptr = custom_data_ptr;
-    const struct cop_data_s *data_end = (struct cop_data_s *)((ptrdiff_t)custom_data_ptr + custom_data_size);
+    uint32_t cfg = 0;
 
     if (!custom_data_ptr)
     {
@@ -1191,69 +966,23 @@ int ethosu_get_product_config_from_cop_data(const void *custom_data_ptr,
         return -1;
     }
 
-    // Verify first word
-    if (data_ptr->word != ETHOSU_FOURCC)
+    if (ethosu_get_cop_optimizer_config(custom_data_ptr, (size_t)custom_data_size, &cfg) < 0)
     {
-        LOG_ERR("Custom Operator Payload: %" PRIu32 " is not correct, expected %x", data_ptr->word, ETHOSU_FOURCC);
         return -1;
     }
 
-    data_ptr++;
-
-    // Parse Custom Operator Payload data
-    while (data_ptr < data_end)
+    // Got the optimizer config, telling which NPU the network has been compiled for
+    if (product_out)
     {
-        switch (data_ptr->driver_action_command)
-        {
-        case OPTIMIZER_CONFIG:
-        {
-            uint32_t cfg = 0;
-
-            if (!ethosu_verify_cop_record_words(data_ptr,
-                                                data_end,
-                                                DRIVER_ACTION_LENGTH_32_BIT_WORD + OPTIMIZER_CONFIG_LENGTH_32_BIT_WORD,
-                                                "OPTIMIZER_CONFIG"))
-            {
-                return -1;
-            }
-
-            cfg = data_ptr[1].word;
-
-            // Got the optimizer config, telling which NPU the network has been compiled for
-            if (product_out)
-            {
-                *product_out = (cfg >> 28);
-            }
-
-            if (log2_macs_out)
-            {
-                *log2_macs_out = (cfg & 0XF);
-            }
-            return 0;
-        }
-        case COMMAND_STREAM:
-        {
-            size_t record_words =
-                DRIVER_ACTION_LENGTH_32_BIT_WORD + (size_t)((data_ptr->reserved << 16) | data_ptr->length);
-
-            if (!ethosu_verify_cop_record_words(data_ptr, data_end, record_words, "COMMAND_STREAM"))
-            {
-                return -1;
-            }
-            data_ptr += record_words;
-            break;
-        }
-        case NOP:
-            data_ptr += DRIVER_ACTION_LENGTH_32_BIT_WORD;
-            break;
-        default:
-            LOG_ERR("UNSUPPORTED driver_action_command: %u", data_ptr->driver_action_command);
-            return -1;
-        }
+        *product_out = (cfg >> 28);
     }
 
-    LOG_ERR("Could not find product config in COP data!");
-    return -1;
+    if (log2_macs_out)
+    {
+        *log2_macs_out = (cfg & 0XF);
+    }
+
+    return 0;
 }
 
 // Call this to automatically find a suitable driver matching what the network has been compiled for
