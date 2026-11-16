@@ -36,8 +36,6 @@ set(ETHOSU_MULTI_VARIANT OFF CACHE BOOL "Toggle multi NPU variant support ON/OFF
 # Ethos-U compile time variant, not used by the driver when multi variant option is enabled
 set(ETHOSU_TARGET_NPU_CONFIG "ethos-u55-128" CACHE STRING "Default NPU variant/configuration")
 
-set(CMSIS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmsis_6" CACHE PATH "Path to CMSIS.")
-
 set(LOG_NAMES err warning info debug)
 set(ETHOSU_LOG_ENABLE ON CACHE BOOL "Toggle driver logs on/off (Defaults to ON)")
 set(ETHOSU_LOG_SEVERITY "warning" CACHE STRING "Driver log severity level ${LOG_NAMES} (Defaults to 'warning')")
@@ -56,7 +54,6 @@ endif()
 
 # Make include directories available for current- and sub projects
 include_directories(include src)
-include_directories(${CMSIS_PATH}/CMSIS/Core/Include)
 
 #
 # Build libraries
@@ -136,7 +133,6 @@ if(NOT ETHOSU_MULTI_VARIANT)
     message(STATUS "ETHOSU_TARGET_NPU_CONFIG               : ${ETHOSU_TARGET_NPU_CONFIG}")
 endif()
 message(STATUS "CMAKE_SYSTEM_PROCESSOR                 : ${CMAKE_SYSTEM_PROCESSOR}")
-message(STATUS "CMSIS_PATH                             : ${CMSIS_PATH}")
 message(STATUS "ETHOSU_LOG_ENABLE                      : ${ETHOSU_LOG_ENABLE}")
 message(STATUS "ETHOSU_LOG_SEVERITY                    : ${ETHOSU_LOG_SEVERITY}")
 message(STATUS "ETHOSU_INFERENCE_TIMEOUT               : ${ETHOSU_INFERENCE_TIMEOUT_TEXT}")

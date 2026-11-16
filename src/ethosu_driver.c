@@ -35,7 +35,6 @@
 #endif
 
 #include <assert.h>
-#include <cmsis_compiler.h>
 #ifndef __ARMCC_VERSION
 #include <sys/types.h>
 #endif
@@ -197,7 +196,7 @@ void __attribute__((weak)) ethosu_semaphore_destroy(void *sem)
     free((struct ethosu_semaphore_t *)sem);
 }
 
-// Baremetal simulation of waiting/sleeping for and then taking a semaphore using intrisics
+// Baremetal simulation of waiting/sleeping for and then taking a semaphore using WFE
 int __attribute__((weak)) ethosu_semaphore_take(void *sem, uint64_t timeout)
 {
     // Baremetal pseudo-example on how to trigger a timeout:
@@ -219,7 +218,8 @@ int __attribute__((weak)) ethosu_semaphore_take(void *sem, uint64_t timeout)
 
     while (s->count == 0)
     {
-        __WFE();
+        // The memory clobber ensures the compiler reloads count, which an ISR may have updated.
+        __asm volatile("wfe" ::: "memory");
         // Baremetal pseudo-example check if timeout triggered:
         // if (SEV_timer_triggered()) {
         //     return -1;
@@ -229,12 +229,13 @@ int __attribute__((weak)) ethosu_semaphore_take(void *sem, uint64_t timeout)
     return 0;
 }
 
-// Baremetal simulation of giving a semaphore and waking up processes using intrinsics
+// Baremetal simulation of giving a semaphore and signaling an event using SEV
 int __attribute__((weak)) ethosu_semaphore_give(void *sem)
 {
     struct ethosu_semaphore_t *s = sem;
     s->count++;
-    __SEV();
+    // The memory clobber prevents the compiler from moving the count store after SEV.
+    __asm volatile("sev" ::: "memory");
     return 0;
 }
 
