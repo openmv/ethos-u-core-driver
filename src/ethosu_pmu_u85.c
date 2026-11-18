@@ -164,9 +164,19 @@ uint32_t U85_PMU_CNTR_Status(struct ethosu_driver *drv)
 
 uint64_t U85_PMU_Get_CCNTR(struct ethosu_driver *drv)
 {
-    uint32_t val_lo = drv->dev.reg->PMCCNTR.CYCLE_CNT_LO;
-    uint32_t val_hi = drv->dev.reg->PMCCNTR.CYCLE_CNT_HI;
-    uint64_t val    = ((uint64_t)val_hi << 32) | val_lo;
+    uint32_t val_lo;
+    uint32_t val_hi;
+    uint32_t val_hi_after;
+
+    // Retry if the low word rolled over while reading the counter.
+    do
+    {
+        val_hi       = drv->dev.reg->PMCCNTR.CYCLE_CNT_HI;
+        val_lo       = drv->dev.reg->PMCCNTR.CYCLE_CNT_LO;
+        val_hi_after = drv->dev.reg->PMCCNTR.CYCLE_CNT_HI;
+    } while (val_hi != val_hi_after);
+
+    uint64_t val = ((uint64_t)val_hi << 32) | val_lo;
 
     LOG_DEBUG("val=%" PRIu64, val);
     return val;
