@@ -122,11 +122,10 @@ uint32_t ETHOSU_PMU_CNTR_Status(struct ethosu_driver *drv);
  * \brief  Read cycle counter (64 bit)
  * \param  [in]     drv     Driver handle
  * \return                 Cycle count
- * \note   Two HW 32-bit registers that can increment independently in-between reads.
- *         To work-around raciness yet still avoid turning
- *         off the event both are read as one value twice. If the latter read
- *         is not greater than the former, it means overflow of LSW without
- *         incrementing MSW has occurred, in which case the former value is used.
+ * \note   The counter is exposed through separate HW 32-bit registers that can
+ *         increment between reads. Read the high word before and after the low
+ *         word and retry if it changes, so a low-word rollover cannot combine
+ *         words from different counter values.
  */
 uint64_t ETHOSU_PMU_Get_CCNTR(struct ethosu_driver *drv);
 
